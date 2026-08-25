@@ -2,9 +2,12 @@
 
 import { useEffect, useState } from 'react';
 
+import { useToasterOptional } from '../containers/ToasterContainer.js';
 import { Icon } from '../icons/Icon.js';
+import { useOptionalServer } from '../server/ServerContext.js';
 import { libraryAgentId, useOptionalShellMode } from '../server/ShellModeContext.js';
 import type { AgentLibraryEntry, AgentSpec } from '../server/types.js';
+import { getErrorMessage } from '../utils/getErrorMessage.js';
 import { auiButtonClass } from './lib/buttonClasses.js';
 import { cn } from './lib/cn.js';
 import { useSearchAgentsList } from './lib/useSearchAgentsList.js';
@@ -22,8 +25,10 @@ export type AgentsLibraryProps = {
 type AgentLibraryRowProps = {
   agent: AgentLibraryEntry;
   showEdit: boolean;
+  showDelete: boolean;
   onTry: () => void;
   onEdit: () => void;
+  onDelete: () => void;
 };
 
 /** Short label for model fqns like `provider/gpt-4.1` → `gpt-4.1`. */
@@ -32,7 +37,7 @@ function displayModelLabel(modelName: string): string {
   return slash >= 0 ? modelName.slice(slash + 1) : modelName;
 }
 
-function AgentLibraryRow({ agent, showEdit, onTry, onEdit }: AgentLibraryRowProps) {
+function AgentLibraryRow({ agent, showEdit, showDelete, onTry, onEdit, onDelete }: AgentLibraryRowProps) {
   const spec = agent.agentSpec;
   const modelName = spec?.model.name;
   const skillsCount = spec?.skills?.length ?? 0;
@@ -80,6 +85,21 @@ function AgentLibraryRow({ agent, showEdit, onTry, onEdit }: AgentLibraryRowProp
         </span>
       ) : null}
       <span className="flex shrink-0 items-center gap-1.5">
+        {showDelete ? (
+          <button
+            type="button"
+            aria-label={`Delete agent ${agent.name}`}
+            title={`Delete agent ${agent.name}`}
+            className={auiButtonClass({
+              variant: 'ghost',
+              size: 'icon',
+              className: 'size-8 text-failure-bg hover:bg-failure-bg/12 hover:text-failure-bg',
+            })}
+            onClick={onDelete}
+          >
+            <Icon name="trash" className="size-3.5" />
+          </button>
+        ) : null}
         {showEdit ? (
           <button
             type="button"
@@ -113,9 +133,15 @@ function AgentLibraryRow({ agent, showEdit, onTry, onEdit }: AgentLibraryRowProp
 
 export function AgentsLibrary({ open, onOpenChange, onSelectAgent }: AgentsLibraryProps) {
   const shell = useOptionalShellMode();
+  const server = useOptionalServer();
+  const toaster = useToasterOptional();
   const [query, setQuery] = useState('');
+  const [agentPendingDelete, setAgentPendingDelete] = useState<AgentLibraryEntry | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const canEdit = shell?.isComposerEnabled === true;
+  const canDelete = typeof server?.deleteAgent === 'function';
   const agentsListEpoch = shell?.agentsListEpoch ?? 0;
 
   useEffect(() => {
@@ -132,6 +158,8 @@ export function AgentsLibrary({ open, onOpenChange, onSelectAgent }: AgentsLibra
   const closeLibrary = () => {
     onOpenChange(false);
     setQuery('');
+    setAgentPendingDelete(null);
+    setDeleteError(null);
   };
 
   const handleTry = (agent: AgentLibraryEntry) => {
@@ -155,68 +183,161 @@ export function AgentsLibrary({ open, onOpenChange, onSelectAgent }: AgentsLibra
     });
   };
 
+  const requestDelete = (agent: AgentLibraryEntry) => {
+    setDeleteError(null);
+    setAgentPendingDelete(agent);
+  };
+
+  const closeDeleteConfirmation = () => {
+    if (deleting) return;
+    setAgentPendingDelete(null);
+    setDeleteError(null);
+  };
+
+  const confirmDelete = async () => {
+    const agent = agentPendingDelete;
+    const deleteAgent = server?.deleteAgent;
+    if (agent == null || deleteAgent === undefined || deleting) return;
+
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await deleteAgent({ agentName: agent.name });
+
+      const deletedAgentId = libraryAgentId(agent);
+      if (shell?.historyAgentFilter === deletedAgentId) {
+        shell.setHistoryAgentFilter(null);
+      }
+      if (
+        shell?.mode.status === 'active' &&
+        (shell.mode.agentId === deletedAgentId || shell.mode.agentName === agent.name)
+      ) {
+        if (shell.isComposerEnabled) {
+          shell.openDraft();
+        } else {
+          shell.openLibraryHome();
+        }
+      }
+
+      shell?.invalidateAgentsList();
+      setAgentPendingDelete(null);
+      toaster?.showSuccess({ title: `${agent.name} deleted` });
+    } catch (caught) {
+      if (toaster == null) {
+        setDeleteError(getErrorMessage(caught, 'Could not delete agent.'));
+      } else {
+        toaster.showError(caught);
+      }
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   return (
-    <CenteredModal open={open} onOpenChange={onOpenChange} title="Agents Library">
-      <div className="bg-secondary-bg/40 flex min-h-0 flex-1 flex-col">
-        <div className="shrink-0 border-b border-border px-4 py-3">
-          <SearchInput query={query} setQuery={setQuery} placeholder="Search agents" />
-          {isSearching ? (
-            <p className="text-text-secondary mt-1.5 text-xs" role="status">
-              Searching…
+    <>
+      <CenteredModal open={open} onOpenChange={onOpenChange} title="Agents Library">
+        <div className="bg-secondary-bg/40 flex min-h-0 flex-1 flex-col">
+          <div className="shrink-0 border-b border-border px-4 py-3">
+            <SearchInput query={query} setQuery={setQuery} placeholder="Search agents" />
+            {isSearching ? (
+              <p className="text-text-secondary mt-1.5 text-xs" role="status">
+                Searching…
+              </p>
+            ) : null}
+          </div>
+          <div
+            ref={listRef}
+            className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto p-2"
+            role="menu"
+            aria-label="Agents"
+          >
+            {isInitialLoading ? (
+              <div className="flex flex-col gap-2 p-1" role="status" aria-label="Loading agents">
+                {Array.from({ length: 6 }, (_, i) => (
+                  <Skeleton key={i} className="h-11 w-full rounded-md" />
+                ))}
+              </div>
+            ) : error ? (
+              <p className="text-failure-bg px-3 py-8 text-center text-sm">{error}</p>
+            ) : agents.length === 0 ? (
+              <p className="text-text-secondary px-3 py-8 text-center text-sm">
+                {query.trim()
+                  ? `No agents match "${query.trim()}".`
+                  : 'No agents yet. Build one in a chat, then save it as an agent.'}
+              </p>
+            ) : (
+              <>
+                {agents.map(agent => {
+                  const agentSpec = agent.agentSpec;
+                  const showEdit = canEdit && agentSpec != null;
+                  return (
+                    <AgentLibraryRow
+                      key={libraryAgentId(agent)}
+                      agent={agent}
+                      showEdit={showEdit}
+                      showDelete={canDelete}
+                      onTry={() => handleTry(agent)}
+                      onEdit={() => {
+                        if (agentSpec != null) handleEdit(agent, agentSpec);
+                      }}
+                      onDelete={() => requestDelete(agent)}
+                    />
+                  );
+                })}
+                {hasMore ? (
+                  <div ref={sentinelRef} className="flex h-8 shrink-0 items-center justify-center" aria-hidden>
+                    {loadingMore ? (
+                      <span className="text-text-secondary text-xs" role="status">
+                        Loading more…
+                      </span>
+                    ) : null}
+                  </div>
+                ) : null}
+              </>
+            )}
+          </div>
+        </div>
+      </CenteredModal>
+
+      <CenteredModal
+        open={agentPendingDelete != null}
+        onOpenChange={nextOpen => {
+          if (!nextOpen) closeDeleteConfirmation();
+        }}
+        title={agentPendingDelete == null ? 'Delete agent' : `Delete ${agentPendingDelete.name}?`}
+        description="This removes the agent from the library. Existing chats will stay in your history."
+        contentSized
+      >
+        <div className="flex flex-col gap-4 p-5">
+          {deleteError != null ? (
+            <p
+              className="rounded-md border border-failure-bg/30 bg-failure-bg/10 px-3 py-2 text-sm text-failure-bg"
+              role="alert"
+            >
+              {deleteError}
             </p>
           ) : null}
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <button
+              type="button"
+              className={auiButtonClass({ variant: 'outline' })}
+              disabled={deleting}
+              onClick={closeDeleteConfirmation}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className={auiButtonClass({ variant: 'destructive' })}
+              disabled={deleting}
+              onClick={() => void confirmDelete()}
+            >
+              {deleting ? 'Deleting…' : 'Delete agent'}
+            </button>
+          </div>
         </div>
-        <div
-          ref={listRef}
-          className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto p-2"
-          role="menu"
-          aria-label="Agents"
-        >
-          {isInitialLoading ? (
-            <div className="flex flex-col gap-2 p-1" role="status" aria-label="Loading agents">
-              {Array.from({ length: 6 }, (_, i) => (
-                <Skeleton key={i} className="h-11 w-full rounded-md" />
-              ))}
-            </div>
-          ) : error ? (
-            <p className="text-failure-bg px-3 py-8 text-center text-sm">{error}</p>
-          ) : agents.length === 0 ? (
-            <p className="text-text-secondary px-3 py-8 text-center text-sm">
-              {query.trim()
-                ? `No agents match "${query.trim()}".`
-                : 'No agents yet. Build one in a chat, then save it as an agent.'}
-            </p>
-          ) : (
-            <>
-              {agents.map(agent => {
-                const agentSpec = agent.agentSpec;
-                const showEdit = canEdit && agentSpec != null;
-                return (
-                  <AgentLibraryRow
-                    key={libraryAgentId(agent)}
-                    agent={agent}
-                    showEdit={showEdit}
-                    onTry={() => handleTry(agent)}
-                    onEdit={() => {
-                      if (agentSpec != null) handleEdit(agent, agentSpec);
-                    }}
-                  />
-                );
-              })}
-              {hasMore ? (
-                <div ref={sentinelRef} className="flex h-8 shrink-0 items-center justify-center" aria-hidden>
-                  {loadingMore ? (
-                    <span className="text-text-secondary text-xs" role="status">
-                      Loading more…
-                    </span>
-                  ) : null}
-                </div>
-              ) : null}
-            </>
-          )}
-        </div>
-      </div>
-    </CenteredModal>
+      </CenteredModal>
+    </>
   );
 }
 
