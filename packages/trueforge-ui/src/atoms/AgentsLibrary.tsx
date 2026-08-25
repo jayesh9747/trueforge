@@ -221,7 +221,8 @@ export function AgentsLibrary({ open, onOpenChange, onSelectAgent }: AgentsLibra
 
       shell?.invalidateAgentsList();
       setAgentPendingDelete(null);
-      toaster?.showSuccess({ title: `${agent.name} deleted` });
+      // Let the native dialog close before ToastStack chooses its portal target.
+      window.setTimeout(() => toaster?.showSuccess({ title: `${agent.name} deleted` }), 0);
     } catch (caught) {
       if (toaster == null) {
         setDeleteError(getErrorMessage(caught, 'Could not delete agent.'));

@@ -5,6 +5,7 @@ import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { AgentsLibrary } from '@/atoms/AgentsLibrary.js';
 import { AgentsLibraryButton } from '@/atoms/AgentsLibraryButton.js';
 import { CenteredModal } from '@/atoms/primitives/CenteredModal.js';
+import { ToasterProvider } from '@/containers/ToasterContainer.js';
 import { ServerProvider } from '@/server/ServerContext.js';
 import { ShellModeProvider, useShellMode } from '@/server/ShellModeContext.js';
 import type { AgentUIServer } from '@/server/types.js';
@@ -213,9 +214,11 @@ describe('AgentsLibrary', () => {
     render(
       <SlotsProvider>
         <ServerProvider server={server}>
-          <ShellModeProvider>
-            <AgentsLibrary open onOpenChange={() => undefined} />
-          </ShellModeProvider>
+          <ToasterProvider>
+            <ShellModeProvider>
+              <AgentsLibrary open onOpenChange={() => undefined} />
+            </ShellModeProvider>
+          </ToasterProvider>
         </ServerProvider>
       </SlotsProvider>,
     );
@@ -234,6 +237,9 @@ describe('AgentsLibrary', () => {
       expect(searchAgents).toHaveBeenCalledTimes(2);
     });
     expect(screen.queryByRole('button', { name: 'Delete agent writer' })).not.toBeInTheDocument();
+    const successToast = await screen.findByRole('alert');
+    expect(successToast).toHaveTextContent('writer deleted');
+    expect(successToast.closest('dialog')).toHaveAttribute('aria-label', 'Agents Library');
   });
 
   it('allows cancellation and keeps a failed deletion available for retry', async () => {
