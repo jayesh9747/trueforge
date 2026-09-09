@@ -1,5 +1,17 @@
 # @truefoundry/trueforge
 
+## 0.2.0-rc.3
+
+### Patch Changes
+
+- 555bef0: Allow sandbox artifact downloads to use paths relative to the sandbox working directory.
+- bb8d3d3: Persist optional `reason` on schedule runs when hand-off fails. Exposed on ScheduleRun responses as nullable string.
+- 46fadce: Point-lookup ServiceFoundry model integrations by provider account and model name, and fetch the full catalog in one unpaginated request.
+- Updated dependencies [648273b]
+- Updated dependencies [a5f220f]
+  - @truefoundry/trueforge-sdk@0.1.4-rc.3
+  - @truefoundry/trueforge-core@0.2.0-rc.3
+
 ## 0.2.0-rc.2
 
 ### Patch Changes

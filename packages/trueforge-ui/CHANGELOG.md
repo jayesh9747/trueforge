@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.3.0-rc.3
+
+### Minor Changes
+
+- 1d31116: Open agent model settings inline and support typed custom model parameters.
+- 12b02ff: Open Runtime Config in a right-side drawer and label scheduled sessions consistently.
+- 7e25f68: Open Save Agent in a right-side drawer with only the agent name while preserving configuration from Agent Config.
+
+### Patch Changes
+
+- 1b8a3f7: Add documentation links to the code snippets view and shell actions.
+- e3973a5: Show the selected connector and skill count beside the composer tools icon.
+- 1ec19f0: Replace API key replacement with connector configuration editing from the connector list and details view.
+- e3973a5: Group schedule recurrence controls and display the cadence in an attached summary footer.
+- 1b8a3f7: Match the Build Agent configuration panel width to the agent playground and identify sessions created by schedule runs.
+- adaf532: Widen the sidebar rail and its nav buttons so labels like "Build Agent" have more breathing room.
+- Updated dependencies [648273b]
+  - @truefoundry/trueforge-sdk@0.1.4-rc.3
+
 ## 0.3.0-rc.2
 
 ### Minor Changes

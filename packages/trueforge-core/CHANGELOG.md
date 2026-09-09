@@ -1,5 +1,11 @@
 # @truefoundry/trueforge-core
 
+## 0.2.0-rc.3
+
+### Patch Changes
+
+- a5f220f: Dedupe LLM resolve within a turn so parent and sub-agents sharing a model name call deps.llm once.
+
 ## 0.2.0-rc.2
 
 ### Patch Changes
